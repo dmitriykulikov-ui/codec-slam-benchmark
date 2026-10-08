@@ -1,0 +1,3 @@
+FROM codecslam/dpvo
+RUN pip install pypose
+COPY dpvo_run.py /opt/DPVO/dpvo_run.py

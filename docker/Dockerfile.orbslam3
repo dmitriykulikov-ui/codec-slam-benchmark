@@ -1,0 +1,16 @@
+FROM ubuntu:20.04
+ENV DEBIAN_FRONTEND=noninteractive
+RUN sed -i "s|http://archive.ubuntu.com|http://mirror.yandex.ru|g; s|http://security.ubuntu.com|http://mirror.yandex.ru|g" /etc/apt/sources.list && echo "Acquire::Retries \"8\";" > /etc/apt/apt.conf.d/80retries
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential cmake git ca-certificates \
+    libeigen3-dev libopencv-dev libglew-dev libboost-serialization-dev libboost-system-dev libboost-filesystem-dev libboost-thread-dev libssl-dev python3 wget unzip pkg-config \
+    libgl1-mesa-dev libepoxy-dev && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 -b v0.6 https://github.com/stevenlovegrove/Pangolin.git /opt/Pangolin && \
+    cd /opt/Pangolin && mkdir build && cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF && make -j8 && make install && ldconfig
+RUN git clone https://github.com/UZ-SLAMLab/ORB_SLAM3.git /opt/ORB_SLAM3 && cd /opt/ORB_SLAM3 && \
+    git rev-parse HEAD > /opt/ORB_SLAM3/COMMIT && \
+    sed -i 's/++11/++14/g' CMakeLists.txt && \
+    sed -i 's/OpenCV 4.4/OpenCV 4.2/' CMakeLists.txt && \
+    find Examples -name '*.cc' -exec sed -i -E 's/(ORB_SLAM3::System::[A-Z_]+) *, *true/\1, false/' {} + && \
+    sed -i 's/make -j$/make -j8/' build.sh && chmod +x build.sh && ./build.sh
+WORKDIR /opt/ORB_SLAM3

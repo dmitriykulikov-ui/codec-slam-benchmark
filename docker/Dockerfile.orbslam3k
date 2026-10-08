@@ -1,0 +1,4 @@
+FROM codecslam/orbslam3
+# KITTI stereo example: save the trajectory with timestamps (EuRoC/TUM-style, largest map) like the other datasets
+RUN sed -i 's|SLAM.SaveTrajectoryKITTI("CameraTrajectory.txt");|SLAM.SaveTrajectoryEuRoC("f_traj_ns.txt");|' Examples/Stereo/stereo_kitti.cc && \
+    grep -n 'SaveTrajectory' Examples/Stereo/stereo_kitti.cc && cd build && make stereo_kitti -j8

@@ -1,0 +1,7 @@
+FROM ubuntu:22.04
+ENV DEBIAN_FRONTEND=noninteractive
+RUN sed -i "s|http://archive.ubuntu.com|http://mirror.yandex.ru|g; s|http://security.ubuntu.com|http://mirror.yandex.ru|g" /etc/apt/sources.list && echo 'Acquire::Retries "8";' > /etc/apt/apt.conf.d/80retries
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential cmake git ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 https://github.com/fraunhoferhhi/vvenc.git /opt/vvenc && cd /opt/vvenc && git rev-parse HEAD > COMMIT && \
+    make install-release -j8 install-prefix=/usr/local && ls /usr/local/bin
+WORKDIR /opt/vvenc
