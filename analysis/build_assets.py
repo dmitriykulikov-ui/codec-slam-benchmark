@@ -48,7 +48,7 @@ def table_bd(S, path):
     L += [r'\bottomrule', r'\end{tabular}', r'\end{table*}']
     open(path, 'w').write('\n'.join(L) + '\n')
 
-def table_rtau(S, path):
+def table_rtau_old(S, path):
     cols = [('orbslam3', 'TUM VI'), ('orbslam3', 'EuRoC'), ('orbslam3', 'KITTI'), ('basalt', 'TUM VI'), ('basalt', 'EuRoC'), ('basalt', 'KITTI'), ('dpvo', 'TUM VI')]
     cols = [c for c in cols if ((S.system == c[0]) & (S.dataset == c[1])).any()]
     L = [r'\begin{table*}[t]',
@@ -109,9 +109,9 @@ def fig_curves(P, ds, systems, path):
         ax.set_xlabel('Stereo bitrate (Mbit/s)'); ax.xaxis.set_major_formatter(mpl.ticker.FuncFormatter(mr.mbps_fmt))
         ax.set_xlim(0.018, 30)
     a0 = axes[0]; a0.set_ylabel('Relative ATE (median over sequences)'); a0.set_ylim(0.7, 26)
-    a0.set_yticks([1, 1.25, 2, 5, 10, 20]); a0.set_yticklabels(['1', '1.25', '2', '5', '10', 'fail'])
+    a0.set_yticks([1, 1.25, 2, 5, 10, 20]); a0.set_yticklabels(['1', '1.25', '2', '5', '10', 'failed'])
     a0.yaxis.set_minor_formatter(mpl.ticker.NullFormatter())
-    a0.text(0.03, 0.04, 'lower = better', transform=a0.transAxes, fontsize=6, color='0.35')
+    a0.text(0.03, 0.04, 'lower is better', transform=a0.transAxes, fontsize=6, color='0.35')
     h, l = [], []
     for ax in axes:
         for hh, ll in zip(*ax.get_legend_handles_labels()):
@@ -131,20 +131,26 @@ def fig_rtau(S, path):
             if sub.empty:
                 ax.text(0.06, i, 'n.d.', va='center', fontsize=5.5, color='0.5', transform=ax.get_yaxis_transform()); continue
             for j, (dsn, dd) in enumerate(sub.groupby('dataset')):
+                off = {'TUM VI': -0.2, 'EuRoC': 0.0, 'KITTI': 0.2}[dsn]
                 v = dd['R@1.25'].dropna() / 1000
-                ax.scatter(v, np.full(len(v), i) + {'TUM VI': -0.2, 'EuRoC': 0.0, 'KITTI': 0.2}[dsn], s=9, marker=MK[dsn],
-                           facecolor=mr.COL[c], edgecolor='none', alpha=0.8, zorder=3)
-            v = sub['R@1.25'].dropna() / 1000
-            if len(v): ax.plot([v.median()] * 2, [i - 0.32, i + 0.32], color=mr.COL[c], lw=1.8, zorder=4)
-            else: ax.text(0.06, i, 'not reached', va='center', fontsize=5.5, color='0.5', transform=ax.get_yaxis_transform())
+                ax.scatter(v, np.full(len(v), i) + off, s=9, marker=MK[dsn], facecolor=mr.COL[c], edgecolor='none', alpha=0.8, zorder=3)
+                nr = int(dd['R@1.25'].isna().sum())
+                if nr:   # right-censored: tolerance not reached in the tested range -> open marker at the right edge
+                    ax.scatter(np.full(nr, 12.5) * (1 + 0.06 * np.arange(nr)), np.full(nr, i) + off, s=11, marker=MK[dsn],
+                               facecolor='none', edgecolor=mr.COL[c], lw=0.7, zorder=3, clip_on=False)
+            vals = sub['R@1.25'].values.astype(float)
+            med = float(np.median(np.where(np.isfinite(vals), vals, np.inf))) / 1000
+            if np.isfinite(med): ax.plot([med] * 2, [i - 0.32, i + 0.32], color=mr.COL[c], lw=1.8, zorder=4)
+            else: ax.text(0.03, i, 'median not reached', va='center', fontsize=5.5, color='0.45', transform=ax.get_yaxis_transform())
         ax.set_xscale('log'); ax.set_title(mr.SYSSHORT[s], loc='left'); ax.set_xlabel(r'$R_{1.25}$, stereo (Mbit/s)')
-        ax.xaxis.set_major_formatter(mpl.ticker.FuncFormatter(mr.mbps_fmt)); ax.xaxis.set_minor_formatter(mpl.ticker.NullFormatter()); ax.set_xlim(0.05, 15); ax.margins(y=0.05)
+        ax.xaxis.set_major_formatter(mpl.ticker.FuncFormatter(mr.mbps_fmt)); ax.xaxis.set_minor_formatter(mpl.ticker.NullFormatter()); ax.set_xlim(0.03, 18); ax.margins(y=0.05)
     a0 = np.atleast_1d(axes)[0]
     a0.set_yticks(range(len(codecs))); a0.set_yticklabels([mr.LAB[c] for c in codecs]); a0.invert_yaxis()
     from matplotlib.lines import Line2D
     hl = [Line2D([], [], ls='', marker='o', color='0.4', ms=3.5, label='TUM VI sequence'),
           Line2D([], [], ls='', marker='^', color='0.4', ms=3.5, label='EuRoC sequence'),
           Line2D([], [], ls='', marker='s', color='0.4', ms=3.2, label='KITTI sequence'),
+          Line2D([], [], ls='', marker='o', markerfacecolor='none', markeredgecolor='0.4', ms=3.5, label='not reached (right edge)'),
           Line2D([], [], color='0.4', lw=1.8, label='median')]
     np.atleast_1d(axes)[-1].legend(handles=hl, loc='lower right', frameon=False, fontsize=5.5)
     a0.text(0.97, 0.98, 'left = fewer bits', transform=a0.transAxes, ha='right', va='top', fontsize=5.5, color='0.35')
@@ -155,14 +161,21 @@ def gen_numbers(R, P, S, PT, rho, codec_tables, path, finding):
     L = []
     def cs(name, val): L.append(r'\expandafter\def\csname %s\endcsname{%s}' % (name, val))
     for (s, d, c), g in S.groupby(['system', 'dataset', 'codec']):
-        b = g.bd_vs_x264.dropna()
-        cs(f'bd@{s}@{DS[d]}@{c}', '--' if b.empty else f'{b.median():+.0f}'.replace('-', '$-$').replace('+', '$+$'))
-        for t, k in (('R@1.25', '125'), ('R@2.0', '2')):
-            v = g[t].dropna(); cs(f'rt@{s}@{DS[d]}@{c}@{k}', '--' if v.empty else f'{v.median() / 1000:.2f}')
+        m, k_, n_ = agg_bd(g)
+        cs(f'bd@{s}@{DS[d]}@{c}', 'n/a' if not np.isfinite(m) else _sg(m))
+        cs(f'bdabs@{s}@{DS[d]}@{c}', 'n/a' if not np.isfinite(m) else f'{abs(m):.0f}')
+        cs(f'bdk@{s}@{DS[d]}@{c}', f'{k_}/{n_}')
+        for t, kk in (('R@1.25', '125'), ('R@2.0', '2')):
+            mm, k2, n2, lc = agg_rtau(g, t)
+            cs(f'rt@{s}@{DS[d]}@{c}@{kk}', ('not reached' if n2 else '--') if not np.isfinite(mm) else f'{mm / 1000:.2f}')
+            cs(f'rtk@{s}@{DS[d]}@{c}@{kk}', f'{k2}/{n2}')
     for (s, d, c), g in PT.groupby(['system', 'dataset', 'codec']):
         v = g.psnr125.dropna(); cs(f'pt@{s}@{DS[d]}@{c}', '--' if v.empty else f'{v.median():.1f}')
     for s, r_ in rho.items(): cs(f'rho@{s}', f'{r_:.2f}'.replace('-', '{-}'))
     L.append(r'\newcommand{\bd}[3]{\csname bd@#1@#2@#3\endcsname}')
+    L.append(r'\newcommand{\bdabs}[3]{\csname bdabs@#1@#2@#3\endcsname}')
+    L.append(r'\newcommand{\bdk}[3]{\csname bdk@#1@#2@#3\endcsname}')
+    L.append(r'\newcommand{\rtk}[4]{\csname rtk@#1@#2@#3@#4\endcsname}')
     L.append(r'\newcommand{\rt}[4]{\csname rt@#1@#2@#3@#4\endcsname}')
     L.append(r'\newcommand{\pt}[3]{\csname pt@#1@#2@#3\endcsname}')
     L.append(r'\newcommand{\rhoof}[1]{\csname rho@#1\endcsname}')
@@ -171,7 +184,7 @@ def gen_numbers(R, P, S, PT, rho, codec_tables, path, finding):
     ct = codec_tables
     n_enc = len(ct[ct.codec != 'raw']) + len(ct[ct.codec == 'raw'])
     r_ = ct[ct.codec == 'raw'].set_index('seq'); durs = r_.frames / np.where(r_.index.str.startswith('K'), 10.0, 20.0)
-    nums = {'NumCodecs': words[R[R.codec != 'raw'].codec.nunique()], 'NumRuns': f'{len(R):,}'.replace(',', '{,}'), 'NumSeqs': words[nseq_t + nseq_e + nseq_k], 'NumSeqsKITTI': words[nseq_k],
+    nums = {'NumCodecs': words[R[R.codec != 'raw'].codec.nunique()], 'NumRuns': f'{len(R):,}'.replace(',', '{,}'), 'NumSeqs': str(nseq_t + nseq_e + nseq_k), 'NumSeqsKITTI': words[nseq_k],
             'NumSeqsTUM': words[nseq_t], 'NumSeqsEuRoC': words[nseq_e], 'NumEncodings': f'{n_enc}',
             'SeqDurMin': f'{durs.min():.0f}', 'SeqDurMax': f'{durs.max():.0f}',
             'NumFramesTotal': f'{int(ct[ct.codec == "raw"].frames.sum()):,}'.replace(',', '{,}'),
@@ -223,13 +236,13 @@ def fig_psnr(P, path):
         ax.axhline(1, color='0.45', lw=0.7, ls=':'); ax.margins(0.04)
     a0 = np.atleast_1d(axes)[0]
     a0.set_ylabel('Relative ATE'); a0.set_ylim(0.4, 26)
-    a0.set_yticks([0.5, 1, 2, 5, 10, 20]); a0.set_yticklabels(['0.5', '1', '2', '5', '10', 'fail']); a0.yaxis.set_minor_formatter(mpl.ticker.NullFormatter())
+    a0.set_yticks([0.5, 1, 2, 5, 10, 20]); a0.set_yticklabels(['0.5', '1', '2', '5', '10', 'failed']); a0.yaxis.set_minor_formatter(mpl.ticker.NullFormatter())
     h, l = a0.get_legend_handles_labels()
     fig.legend(h, l, loc='lower center', ncol=4, frameon=False, bbox_to_anchor=(0.5, -0.2), fontsize=6, markerscale=1.8, columnspacing=1.0)
     fig.savefig(path, bbox_inches='tight'); return fig, rho
 
 
-def table_bd_ci(S, ci, path):
+def table_bd_ci_old(S, ci, path):
     """BD-rate table: median over sequences with hierarchical-bootstrap 95% CI (see bootstrap_ci.py)."""
     cols = [('orbslam3', 'TUM VI'), ('orbslam3', 'EuRoC'), ('orbslam3', 'KITTI'), ('basalt', 'TUM VI'), ('basalt', 'EuRoC'), ('basalt', 'KITTI'), ('dpvo', 'TUM VI')]
     cols = [c for c in cols if ((S.system == c[0]) & (S.dataset == c[1])).any()]
@@ -249,6 +262,82 @@ def table_bd_ci(S, ci, path):
             q = ci[(ci.system == s) & (ci.dataset == d) & (ci.codec == c)]
             if q.empty or not np.isfinite(q.bd_lo.iloc[0]): cells.append(f(v.median())); continue
             cells.append(f'{f(v.median())} [{f(q.bd_lo.iloc[0])}, {f(q.bd_hi.iloc[0])}]')
+        L.append(' & '.join(cells) + r' \\')
+    L += [r'\bottomrule', r'\end{tabular}}', r'\end{table*}']
+    open(path, 'w').write('\n'.join(L) + '\n')
+
+
+# ---------------------------------------------------------------- censoring-aware aggregation (revision)
+BD_MIN_K = 3          # a BD-rate_loc median is reported only if defined on >= 3 sequences and on >= half of them
+
+def cell(S, s, d, c):
+    return S[(S.system == s) & (S.dataset == d) & (S.codec == c)]
+
+def agg_rtau(sub, t):
+    """Median R_tau over ALL sequences; 'not reached' (NaN) enters as +inf (right-censored).
+    Returns (median_kbps or inf/nan, k_reached, n, any_left_censored)."""
+    if sub.empty: return np.nan, 0, 0, False
+    v = sub[t].values.astype(float); n = len(v); k = int(np.isfinite(v).sum())
+    med = float(np.median(np.where(np.isfinite(v), v, np.inf)))
+    lc = bool(sub.get(f'cens_{t}', pd.Series(False, index=sub.index)).fillna(False).any())
+    return med, k, n, lc
+
+def agg_bd(sub):
+    """Median BD-rate_loc over sequences where it is defined; NaN unless defined on >= BD_MIN_K and >= n/2."""
+    if sub.empty: return np.nan, 0, 0
+    v = sub.bd_vs_x264.values.astype(float); n = len(v); k = int(np.isfinite(v).sum())
+    if k < BD_MIN_K or k < n / 2: return np.nan, k, n
+    return float(np.nanmedian(v)), k, n
+
+
+COLS_ALL = [('orbslam3', 'TUM VI'), ('orbslam3', 'EuRoC'), ('orbslam3', 'KITTI'), ('basalt', 'TUM VI'), ('basalt', 'EuRoC'), ('basalt', 'KITTI'), ('dpvo', 'TUM VI')]
+def _sg(x): return '0' if round(x) == 0 else f'{x:+.0f}'.replace('-', '$-$').replace('+', '$+$')
+def _kn(k, n): return '' if k == n else r'\,\textsuperscript{%d/%d}' % (k, n)
+
+def fmt_rt(sub, t):
+    m, k, n, lc = agg_rtau(sub, t)
+    if n == 0: return 'n.d.'
+    if not np.isfinite(m): return r'n.r.' + _kn(k, n)
+    return mr.fmt_rate(m) + (r'$^\dagger$' if lc else '') + _kn(k, n)
+
+def table_rtau(S, path):
+    cols = [c for c in COLS_ALL if ((S.system == c[0]) & (S.dataset == c[1])).any()]
+    L = [r'\begin{table*}[t]',
+         r"\caption{Rate at tolerance (stereo bitrate in Mbit/s; DPVO uses only the left stream but the same stereo rate is reported for comparability): lowest bitrate at which the median relative ATE is at most 1.25 ($R_{1.25}$) and 2 ($R_{2}$). Median over all sequences of the dataset, where a sequence on which the tolerance was not reached within the tested range enters the median as $+\infty$ (right censoring). Superscript $k/n$: the tolerance was reached on only $k$ of the $n$ sequences; n.r.: the median itself is not reached in the tested range. $^\dagger$: censored at the lowest tested rate for at least one sequence (the true value may be lower). n.d.: configuration not evaluated for this estimator. Uncompressed: 83.9 (TUM~VI), 115.5 (EuRoC) and 72.6~Mbit/s (KITTI).}",
+         r'\label{tab:rtau}', r'\centering\footnotesize\setlength{\tabcolsep}{3pt}', r'\resizebox{\textwidth}{!}{%',
+         r'\begin{tabular}{@{}l' + 'cc' * len(cols) + '@{}}', r'\toprule',
+         ' & ' + ' & '.join(r'\multicolumn{2}{c}{%s, %s}' % (mr.SYSSHORT[s], d.replace('TUM VI', 'TUM~VI')) for s, d in cols) + r' \\',
+         ''.join(r'\cmidrule(lr){%d-%d}' % (2 + 2 * i, 3 + 2 * i) for i in range(len(cols))),
+         'Configuration & ' + ' & '.join([r'$R_{1.25}$ & $R_{2}$'] * len(cols)) + r' \\', r'\midrule']
+    for c in [c for c in mr.ORDER if c in S.codec.unique()]:
+        cells = [mr.LAB[c]]
+        for s, d in cols:
+            sub = cell(S, s, d, c)
+            cells += ['n.d.', 'n.d.'] if sub.empty else [fmt_rt(sub, 'R@1.25'), fmt_rt(sub, 'R@2.0')]
+        L.append(' & '.join(cells) + r' \\')
+    L += [r'\bottomrule', r'\end{tabular}}', r'\end{table*}']
+    open(path, 'w').write('\n'.join(L) + '\n')
+
+def table_bd_ci(S, ci, path):
+    cols = [c for c in COLS_ALL if ((S.system == c[0]) & (S.dataset == c[1])).any()]
+    nseq = {c: S[(S.system == c[0]) & (S.dataset == c[1])].seq.nunique() for c in cols}
+    L = [r'\begin{table*}[t]',
+         r"\caption{$\mathrm{BD\text{-}rate}_{\mathrm{loc}}$ relative to x264 (\%): average bitrate difference at equal localization error over the overlap of both error curves within relative errors 1.05--3. Negative values mean fewer bits than x264 for the same trajectory error. Median over the sequences on which the measure is defined (overlap of at least a factor of 1.12 in relative error); superscript $k/n$: defined on $k$ of $n$ sequences; n/a: defined on fewer than three sequences or fewer than half of them. Brackets: descriptive 95\% percentile interval of the median from a two-level bootstrap (sequences and, for ORB-SLAM3, repeated runs; \BootN{} resamples; Section~\ref{sec:bd}). VVC-RA: random-access GOP; VVC-LD: low-delay GOP without reordering. n.d.: configuration not evaluated for this estimator. The ORB-SLAM3 EuRoC values depend on the failure criterion (Section~\ref{sec:sensitivity}).}",
+         r'\label{tab:bd}', r'\centering\footnotesize\setlength{\tabcolsep}{3pt}', r'\resizebox{\textwidth}{!}{%',
+         r'\begin{tabular}{@{}l' + 'c' * len(cols) + '@{}}', r'\toprule',
+         ' & ' + ' & '.join(r'\shortstack{%s\\%s ($n{=}%d$)}' % (mr.SYSSHORT[s], d.replace('TUM VI', 'TUM~VI'), nseq[(s, d)]) for s, d in cols) + r' \\', r'\midrule']
+    for c in [c for c in mr.ORDER if c in S.codec.unique()]:
+        cells = [mr.LAB[c]]
+        for s, d in cols:
+            sub = cell(S, s, d, c)
+            if c == 'x264': cells.append('0 (anchor)'); continue
+            if sub.empty: cells.append('n.d.'); continue
+            m, k, n = agg_bd(sub)
+            if not np.isfinite(m): cells.append('n/a' + _kn(k, n)); continue
+            q = ci[(ci.system == s) & (ci.dataset == d) & (ci.codec == c)]
+            txt = _sg(m) + _kn(k, n)
+            if len(q) and np.isfinite(q.bd_lo.iloc[0]): txt += f' [{_sg(q.bd_lo.iloc[0])}, {_sg(q.bd_hi.iloc[0])}]'
+            cells.append(txt)
         L.append(' & '.join(cells) + r' \\')
     L += [r'\bottomrule', r'\end{tabular}}', r'\end{table*}']
     open(path, 'w').write('\n'.join(L) + '\n')

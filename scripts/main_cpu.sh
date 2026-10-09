@@ -1,5 +1,5 @@
 set +e -u
-JOB=$PWD; R=/home/dmitriy/work/codec-slam; cp run_bench.py $R/; mkdir -p $R/calib; cp tumvi_cam0.txt euroc_cam0.txt $R/calib/; cd $R
+JOB=$PWD; R=${CODECSLAM_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}; cp run_bench.py $R/; mkdir -p $R/calib; cp tumvi_cam0.txt euroc_cam0.txt $R/calib/; cd $R
 mkdir -p results_main
 if [ ! -f results_main/codec.csv ]; then   # reuse pilot points that coincide with the main grid
   cp results_pilot/pilot_codec.csv results_main/codec.csv; cp results_pilot/pilot_runs.csv results_main/runs.csv; cp -r results_pilot/traj results_main/

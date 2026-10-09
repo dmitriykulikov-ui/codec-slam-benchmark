@@ -6,7 +6,9 @@ Conventions
 - per (sequence, system, codec, q): median r over repetitions, failure fraction
 - a rate point is "usable" if failure fraction < 0.5; unusable points get r = R_FAIL
 """
-import numpy as np, pandas as pd
+import numpy as np
+import pandas as pd
+if not hasattr(np, "trapezoid"): np.trapezoid = np.trapz  # NumPy < 2.0, pandas as pd
 from scipy.interpolate import PchipInterpolator
 
 def _pava_decreasing(y):

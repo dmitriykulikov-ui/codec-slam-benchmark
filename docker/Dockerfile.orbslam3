@@ -8,6 +8,7 @@ RUN git clone --depth 1 -b v0.6 https://github.com/stevenlovegrove/Pangolin.git 
     cd /opt/Pangolin && mkdir build && cd build && \
     cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF && make -j8 && make install && ldconfig
 RUN git clone https://github.com/UZ-SLAMLab/ORB_SLAM3.git /opt/ORB_SLAM3 && cd /opt/ORB_SLAM3 && \
+    git checkout 4452a3c4ab75b1cde34e5505a36ec3f9edcdc4c4 && \
     git rev-parse HEAD > /opt/ORB_SLAM3/COMMIT && \
     sed -i 's/++11/++14/g' CMakeLists.txt && \
     sed -i 's/OpenCV 4.4/OpenCV 4.2/' CMakeLists.txt && \

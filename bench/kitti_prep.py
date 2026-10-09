@@ -1,3 +1,4 @@
+import os
 #!/usr/bin/env python3
 """Selective download of KITTI odometry sequences from the official zip via HTTP range requests,
 then build 8-bit anchors (sequences 04-12 are 1226x370) in the benchmark layout."""
@@ -7,8 +8,8 @@ from pathlib import Path
 import numpy as np
 URL = 'https://s3.eu-central-1.amazonaws.com/avg-kitti/data_odometry_gray.zip'
 POSES = 'https://s3.eu-central-1.amazonaws.com/avg-kitti/data_odometry_poses.zip'
-ROOT = Path('/home/dmitriy/work/codec-slam'); RAW = ROOT / 'data/kitti_raw'; ANCHOR = ROOT / 'data/tumvi_anchor8'
-FF = ROOT / 'tools/ffmpeg-btbn/bin/ffmpeg'
+ROOT = Path(os.environ.get('CODECSLAM_ROOT', Path(__file__).resolve().parents[1])); RAW = ROOT / 'data/kitti_raw'; ANCHOR = ROOT / 'data/tumvi_anchor8'
+FF = Path(os.environ.get('CODECSLAM_FFMPEG', ROOT / 'tools/ffmpeg-btbn/bin/ffmpeg'))
 SEQS = sys.argv[1].split(',') if len(sys.argv) > 1 else ['05', '06', '07', '10']
 
 def get(url, a, b, tries=8):

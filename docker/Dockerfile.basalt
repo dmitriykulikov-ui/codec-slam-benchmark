@@ -1,4 +1,7 @@
 FROM ubuntu:22.04
+# NOTE: the official install script fetches the current prebuilt Basalt release; it cannot be pinned to a commit.
+# The image used in the paper was built on 2026-10-07 (local image id b77137e50123). For exact replay use the
+# exported image (see README) rather than rebuilding.
 ENV DEBIAN_FRONTEND=noninteractive
 RUN sed -i "s|http://archive.ubuntu.com|http://mirror.yandex.ru|g; s|http://security.ubuntu.com|http://mirror.yandex.ru|g" /etc/apt/sources.list && echo "Acquire::Retries \"8\";" > /etc/apt/apt.conf.d/80retries
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates sudo xz-utils tar && rm -rf /var/lib/apt/lists/*

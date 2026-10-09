@@ -1,3 +1,4 @@
+import os
 #!/usr/bin/env python3
 """Pilot: rate–localization curves for VIO on TUM-VI under lossy video coding.
 
@@ -12,9 +13,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 import numpy as np
 
-ROOT = Path('/home/dmitriy/work/codec-slam')
-FF = ROOT / 'tools/ffmpeg-btbn/bin/ffmpeg'
-FF_NV = ROOT / 'tools/ffmpeg-n81/bin/ffmpeg'   # NVENC needs a release build for driver 580
+ROOT = Path(os.environ.get('CODECSLAM_ROOT', Path(__file__).resolve().parents[1]))
+FF = Path(os.environ.get('CODECSLAM_FFMPEG', ROOT / 'tools/ffmpeg-btbn/bin/ffmpeg'))
+FF_NV = Path(os.environ.get('CODECSLAM_FFMPEG_NVENC', ROOT / 'tools/ffmpeg-n81/bin/ffmpeg'))   # NVENC needs a release build for driver 580
 CALIB = ROOT / 'calib'
 DATA = ROOT / 'data/tumvi'
 ANCHOR = ROOT / 'data/tumvi_anchor8'

@@ -9,7 +9,10 @@ This repository contains the code and the per-run results behind the paper
 Stereo camera streams of public datasets (TUM VI room1–6, EuRoC Machine Hall MH_01–MH_05, KITTI odometry 05/06/07/10) are encoded with eight encoder configurations at six rate points each, decoded, and processed by ORB-SLAM3, Basalt and DPVO. Localization accuracy (ATE/RPE/coverage) is compared to the uncompressed 8-bit reference, and codecs are compared with two task-based measures:
 
 * **R_τ** — the lowest stereo bitrate at which the trajectory error stays within a factor τ of the uncompressed result (τ = 1.25 and 2);
-* **BD-rate_loc** — a Bjøntegaard-style average bitrate difference at equal localization error (relative ATE 1.05–3), with explicit handling of tracking failures.
+* **BD-rate_loc** — a Bjøntegaard-style average bitrate difference at equal localization error (relative ATE 1.05–3), with explicit handling of tracking failures;
+* **BSQ-rate** (Zvezdakova et al., Proc. ISP RAS 32(1), 2020) on PSNR and on localization error, as an image-fidelity comparison and as a second averaging scheme (`analysis/bsq.py`).
+
+Medians over sequences are censoring-aware: a sequence on which a tolerance is not reached within the tested range enters the median as +∞, and the number k/n of sequences on which a measure is defined is reported.
 
 ## Encoder configurations
 
@@ -18,8 +21,8 @@ Stereo camera streams of public datasets (TUM VI room1–6, EuRoC Machine Hall M
 | H.264 | x264 (FFmpeg) | medium, no B-frames, GOP 2 s | CRF 23–47 |
 | HEVC | x265 (FFmpeg) | medium, no B-frames, GOP 2 s | CRF 23–50 |
 | AV1 | SVT-AV1 (FFmpeg) | preset 8, low delay (pred-struct=1), GOP 2 s | CRF 30–63 |
-| VVC-RA | VVenC via FFmpeg libvvenc | preset faster, random access, intra 2 s | QP 27–51 |
-| VVC-LD | VVenC 1.15.0-dev (`vvencFFapp`) | `lowdelay_faster.cfg`, GOP 8, no reordering, intra 40 (24 on KITTI) | QP 27–51 |
+| VVC-RA | VVenC via FFmpeg libvvenc | preset faster, random access (GOP 32), intra 2 s, 10-bit input | QP 27–51 |
+| VVC-LD | VVenC 1.15.0-dev (`vvencFFapp`) | `lowdelay_faster.cfg`, GOP 8, no reordering, intra 40 (16 on KITTI) | QP 27–51 |
 | H.264-HW | NVENC (FFmpeg 8.1) | p5, tune ll, constqp, no B, GOP 2 s | QP 25–50 |
 | HEVC-HW | NVENC (FFmpeg 8.1) | p5, tune ll, constqp, no B, GOP 2 s | QP 25–50 |
 | MJPEG | FFmpeg mjpeg | intra only | q 2–31 |
@@ -49,12 +52,28 @@ results/    runs_orbslam3_basalt.csv  one row per ORB-SLAM3/Basalt run (seq, cod
 
 ## Reproducing
 
-1. Build the images: `docker build -t codecslam/orbslam3 -f docker/Dockerfile.orbslam3 docker` (similarly `basalt`, `dpvo`, `dpvo2`, `vvenc`, `orbslam3k`). The Dockerfiles use a Yandex Ubuntu mirror; replace it with your local mirror if needed.
-2. Obtain the datasets from their authors (TUM VI `dataset-room*_512_16`, EuRoC `machine_hall.zip`, KITTI `data_odometry_gray.zip` + `data_odometry_poses.zip`) and adjust `ROOT`, `DATA` and `FF` (FFmpeg build with libx264, libx265, libsvtav1, libvvenc) in `bench/run_bench.py`.
-3. Run the grid, e.g. `RESDIR=results_main python bench/run_bench.py --seqs room1,room2 --systems orbslam3,basalt --workers 6`.
-4. Regenerate the figures and tables from the CSV files in `results/`: in Python, `exec(open('analysis/build_assets.py').read()); exec(open('analysis/final_pipeline.py').read()); build_all(runs, runs_dpvo, encodings, n_boot=1000)` (run from a directory containing `paper/figures/`).
+### Paper assets from the released tables (minutes, no GPU)
 
-Software versions: ORB-SLAM3 commit 4452a3c, Basalt official release binary, DPVO commit 0ac95b6, VVenC commit de2443e, FFmpeg master N-127233 (software encoders) and FFmpeg 8.1 (NVENC), evo for trajectory evaluation.
+```
+pip install -r requirements.txt
+python analysis/reproduce.py --n-boot 1000 --seed 1 --out paper
+```
+
+This regenerates `paper/generated_numbers.tex`, all `paper/table_*.tex`, `paper/figures/*.pdf` and `paper/bsq_per_sequence.csv`, and checks the per-sequence R_τ and BD-rate_loc against `results/summary_per_sequence.csv` (the released values are reproduced to floating-point precision). The bootstrap uses seed 1 and 1,000 resamples (about 5 min on one core). The figures use matplotlib defaults unless a figure-style function `apply_figure_style()` is defined; numbers and tables do not depend on it.
+
+### Encoding and estimator runs
+
+1. Build the images, e.g. `docker build -t codecslam/orbslam3 -f docker/Dockerfile.orbslam3 docker` (similarly `orbslam3k`, `basalt`, `dpvo`, `dpvo2`, `vvenc`). ORB-SLAM3 (`4452a3c`), DPVO (`0ac95b6`) and VVenC (`de2443e`) are pinned by commit. Basalt is installed from its prebuilt release by the official install script, which cannot be pinned; the image used in the paper was built on 2026-10-07. For DPVO pass `--build-arg TORCH_CUDA_ARCH_LIST=<your GPU arch>` (the paper used 12.0). The Dockerfiles use a Yandex Ubuntu mirror; replace it with your local mirror if needed.
+2. Obtain the datasets from their authors (TUM VI `dataset-room*_512_16`, EuRoC `machine_hall.zip`, KITTI odometry gray images and poses; KITTI is licensed CC BY-NC-SA 3.0, register at the KITTI website before downloading).
+3. Set `CODECSLAM_ROOT` (working directory with `data/`, `tools/`, results), `CODECSLAM_FFMPEG` (FFmpeg with libx264, libx265, libsvtav1, libvvenc; the paper used the BtbN static build `N-127233-g452820cba6-20261007`) and `CODECSLAM_FFMPEG_NVENC` (FFmpeg 8.1 with NVENC).
+4. Run the grid, e.g. `RESDIR=results_main python bench/run_bench.py --seqs room1,room2 --systems orbslam3,basalt --workers 6`; `scripts/` contains the scripts used for each phase.
+
+### Modifications to upstream code
+
+* ORB-SLAM3: C++14 instead of C++11, OpenCV 4.2 accepted instead of 4.4 (Ubuntu 20.04), viewer disabled in all examples; the KITTI stereo example saves the timestamped trajectory of the largest map (`Dockerfile.orbslam3k`).
+* DPVO: `.type()` replaced by `.scalar_type()` for current PyTorch; Eigen 3.4.0 added; a runner `docker/dpvo_run.py` for EuRoC/TUM-style image folders.
+
+Software versions: ORB-SLAM3 commit 4452a3c, Basalt prebuilt release (2026-10-07), DPVO commit 0ac95b6, VVenC commit de2443e (1.15.0-dev), FFmpeg BtbN master N-127233 (software encoders) and FFmpeg 8.1 (NVENC), evo for trajectory evaluation.
 
 ## License
 

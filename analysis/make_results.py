@@ -1,6 +1,6 @@
 """Build figures, tables and generated_numbers.tex for the manuscript.
 Inputs: RUNS (list of runs.csv paths), CODEC_CSV (codec.csv); outputs into paper/.
-Run inside the python kernel after apply_figure_style() is available."""
+Run inside the python kernel after (globals().get('apply_figure_style') or (lambda: None))() is available."""
 import numpy as np, pandas as pd, matplotlib as mpl, matplotlib.pyplot as plt
 from scipy.stats import spearmanr
 import analysis
