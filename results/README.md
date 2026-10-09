@@ -20,6 +20,6 @@ cov_rel = coverage / median reference coverage; a run fails if no trajectory exi
 
 `bsq_per_sequence.csv` — BSQ-rate vs x264 (%) per sequence: bsq_loc (on relative ATE, per system) and bsq_psnr (on luma PSNR).
 
-`reruns_basalt_kitti.csv` — three Basalt reruns (revision, round 2) of KITTI 06 and 07 at x264 CRF 40 on re-encoded streams; the K07 rerun (median repetition) replaces the original run, which had terminated with a numerical failure that did not reproduce. The HEVC-HW K06 QP 40 point could not be rerun (NVENC unavailable after a driver update).
+`reruns_basalt_kitti.csv` — three Basalt reruns each (revision, round 2) of KITTI 06/07 at x264 CRF 40 and HEVC-HW QP 40 on re-encoded streams (identical bitrate and PSNR). The original K07/x264 and K06/HEVC-HW runs had terminated with numerical failures that did not reproduce; the median repetition replaces each of them in `runs_orbslam3_basalt.csv`. The K07/HEVC-HW divergence (ATE 24.4 m) reproduced in all three reruns.
 
 `x264_scenecut_audit.csv` — left camera of every sequence re-encoded with x264 at the six grid CRFs with default scene-cut detection and with `-sc_threshold 0`: frames, keyframes, bytes, bytes in keyframes, luma PSNR.
