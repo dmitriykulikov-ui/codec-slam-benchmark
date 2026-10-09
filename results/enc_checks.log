@@ -1,0 +1,40 @@
+== range test
+average:56.741600
+== FFmpeg encoder versions
+Encoder libsvtav1 [SVT-AV1(Scalable Video Technology for AV1) encoder]:
+x264 - core 0000
+HEVC encoder version %s
+v4.2.0-151-g5ed9ffbcb
+== GOP structure (all 2821 frames of room1 cam0)
+vvc keyframes:
+packets 2821 key 71 sum_bytes 1504557
+file_bytes 1526970
+x264 keyframes:
+packets 2821 key 101 sum_bytes 2470877
+file_bytes 2494944
+0.350000 2.350000 4.350000 6.350000 8.350000 10.350000 12.350000 14.350000 
+0.000000 2.000000 4.000000 6.000000 7.900000 9.900000 10.800000 12.400000 14.400000 16.400000 18.400000 19.350000 
+== Basalt version
+== commits
+4452a3c4ab75b1cde34e5505a36ec3f9edcdc4c4
+
+==========
+== CUDA ==
+==========
+
+CUDA Version 12.8.1
+
+Container image Copyright (c) 2016-2023, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+This container image and its contents are governed by the NVIDIA Deep Learning Container License.
+By pulling and using the container, you accept the terms and conditions of this license:
+https://developer.nvidia.com/ngc/nvidia-deep-learning-container-license
+
+A copy of this license is made available in this container at /NGC-DL-CONTAINER-LICENSE for your convenience.
+
+WARNING: The NVIDIA Driver was not detected.  GPU functionality will not be available.
+   Use the NVIDIA Container Toolkit to start this container with GPU support; see
+   https://docs.nvidia.com/datacenter/cloud-native/ .
+
+0ac95b656d1fda91c271d2a106460d19ad966fc7
+de2443e4cef10330e62e64c7f9acbc7380509abc

@@ -3,7 +3,6 @@ Steps: points ordered by actual bitrate; points that break monotonicity are remo
 function of quality); linear interpolation; integration over the overlap of the quality ranges; BSQ = S_test / S_ref.
 Reported here as (BSQ - 1) * 100 %, i.e. the average bitrate difference at equal quality."""
 import numpy as np
-if not hasattr(np, "trapezoid"): np.trapezoid = np.trapz  # NumPy < 2.0
 
 def _monotone(rate, q, higher_better=True):
     o = np.argsort(rate); r = np.asarray(rate, float)[o]; y = np.asarray(q, float)[o]

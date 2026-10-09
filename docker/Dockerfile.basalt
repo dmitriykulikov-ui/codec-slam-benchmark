@@ -1,10 +1,8 @@
 FROM ubuntu:22.04
-# NOTE: the official install script fetches the current prebuilt Basalt release; it cannot be pinned to a commit.
-# The image used in the paper was built on 2026-10-07 (local image id b77137e50123). For exact replay use the
-# exported image (see README) rather than rebuilding.
+# Basalt prebuilt release 0.1.7 (latest release on the build date of the paper image, 2026-10-07).
 ENV DEBIAN_FRONTEND=noninteractive
 RUN sed -i "s|http://archive.ubuntu.com|http://mirror.yandex.ru|g; s|http://security.ubuntu.com|http://mirror.yandex.ru|g" /etc/apt/sources.list && echo "Acquire::Retries \"8\";" > /etc/apt/apt.conf.d/80retries
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates sudo xz-utils tar && rm -rf /var/lib/apt/lists/*
-RUN curl -LsSf https://gitlab.com/VladyslavUsenko/basalt/-/raw/master/scripts/install.sh -o /tmp/install.sh && sh /tmp/install.sh
+RUN curl -LsSf https://gitlab.com/VladyslavUsenko/basalt/-/raw/master/scripts/install.sh -o /tmp/install.sh && sh /tmp/install.sh 0.1.7
 ENV PATH=/root/.local/bin:$PATH LD_LIBRARY_PATH=/root/.local/lib
 RUN ls /root/.local/bin && ls /root/.local/etc/basalt | grep -i tumvi && (ldd /root/.local/bin/basalt_vio | grep "not found" || true)

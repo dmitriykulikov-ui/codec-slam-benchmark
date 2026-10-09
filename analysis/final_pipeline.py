@@ -73,11 +73,11 @@ def extra_macros(R, P, S):
     if ('orbslam3', 'EuRoC') in ref.index: ex.update(RefORBEUR=rng('orbslam3', 'EuRoC'), RefBasEUR=rng('basalt', 'EuRoC'))
     return ex
 
-# measured once on room1 cam0 (setup/enc_checks.sh): gray->yuv420p->gray round trip, keyframe counts, MKV overhead
+# measured once on room1 cam0 with scripts/enc_checks.sh (output in results/enc_checks.log): gray->yuv420p->gray round trip, keyframe counts, MKV overhead
 CHECKS = {'RangeRoundTripPSNR': '56.7', 'VVCRAKeyframes': '71', 'XTwoSixFourKeyframes': '101', 'CheckFrames': '2821',
           'MKVOverheadVVC': '1.5', 'MKVOverheadXTwoSixFour': '1.0'}
 
-def build_all(vi, dp, ct, n_boot=1000, seed=1):
+def build_all(vi, dp, ct, n_boot=1000, seed=1, results_dir=None):
     R, P, S = prepare(vi, dp); S = add_censoring(S, P); PT = psnr_at_tol(P, S)
     figs = {'curves_tumvi': fig_curves(P, 'TUM VI', ['orbslam3', 'basalt', 'dpvo'], 'paper/figures/curves_tumvi.pdf'),
             'curves_euroc': fig_curves(P, 'EuRoC', ['orbslam3', 'basalt'], 'paper/figures/curves_euroc.pdf')}
@@ -87,10 +87,10 @@ def build_all(vi, dp, ct, n_boot=1000, seed=1):
     figs['psnr'], rho = fig_psnr(P, 'paper/figures/psnr.pdf')
     for k, f in figs.items(): f.savefig(f'prev_{k}.png', dpi=200, bbox_inches='tight')
     B, ci = bootstrap_ci.bootstrap(R, n_boot=n_boot, seed=seed)
-    table_bd_ci(S, ci, 'paper/table_bd.tex'); table_rtau(S, 'paper/table_rtau.tex'); table_psnr(PT, 'paper/table_psnr.tex')
+    table_bd_ci(S, ci, 'paper/table_bd.tex'); table_rtau(S, 'paper/table_rtau.tex'); med_pt = table_psnr(PT, 'paper/table_psnr.tex', S)
     rt_w, sp = practical_table(S, ct, 'paper/table_practical.tex')
     nums = gen_numbers(R, P, S, PT, rho, ct, 'paper/generated_numbers.tex', 'PLACEHOLDER')
-    ex = extra_macros(R, P, S); ex.update(CHECKS); ex.update(globals().get('DIAG', {}))
+    ex = extra_macros(R, P, S); ex.update(CHECKS); ex.update(compute_diagnostics(vi, dp, ct, R, P, S, results_dir=results_dir))
     def bdc(s, d, c): return agg_bd(cell(S, s, d, c))[0]
     def rtc(s, d, c, t='R@1.25'): return agg_rtau(cell(S, s, d, c), t)[0]
     VI, IND = ['orbslam3', 'basalt'], ['TUM VI', 'EuRoC']
@@ -126,7 +126,8 @@ def build_all(vi, dp, ct, n_boot=1000, seed=1):
     ex['VVCLDSaveMin'] = f"{-max(vl):.0f}"; ex['VVCLDSaveMax'] = f"{-min(vl):.0f}"
     vv = [bdc(s, 'TUM VI', 'vvc') for s in VI + ['dpvo']]
     ex['VVCSaveMin'] = f"{-max(vv):.0f}"; ex['VVCSaveMax'] = f"{-min(vv):.0f}"
-    spr = PT.groupby(['system', 'dataset', 'codec']).psnr125.median().dropna().groupby(['system', 'dataset']).agg(lambda v: v.max() - v.min())
+    _sp = pd.Series({k: v for k, v in med_pt.items() if k[2] != 'mjpeg'}); _sp.index = pd.MultiIndex.from_tuples(_sp.index, names=['system', 'dataset', 'codec'])
+    spr = _sp.groupby(['system', 'dataset']).agg(lambda v: v.max() - v.min() if len(v) > 1 else np.nan).dropna()
     ex['PSNRSpreadMin'] = f"{spr.min():.1f}"; ex['PSNRSpreadMax'] = f"{spr.max():.1f}"
     ex['PSNRSpreadORBEUR'] = f"{spr.get(('orbslam3', 'EuRoC'), np.nan):.1f}"
     ex['BootN'] = f'{n_boot:,}'.replace(',', '{,}')
@@ -142,6 +143,8 @@ def build_all(vi, dp, ct, n_boot=1000, seed=1):
             if np.isfinite(r.bd_lo): f.write('\\expandafter\\def\\csname bdci@%s@%s@%s\\endcsname{[%s, %s]}\n' % (r.system, DSK[r.dataset], r.codec, sg(r.bd_lo), sg(r.bd_hi)))
         f.write('\\newcommand{\\bdci}[3]{\\csname bdci@#1@#2@#3\\endcsname}\n')
     BQ, BP, TB, exb, dis = bsq_assets(P, S, ct); write_bsq_macros(exb)
+    with open('paper/generated_numbers.tex', 'a') as f:
+        for (s_, d_, c_), m_ in med_pt.items(): f.write('\\expandafter\\def\\csname pt@%s@%s@%s\\endcsname{%.1f}\n' % (s_, {'TUM VI': 'TUM', 'EuRoC': 'EUR', 'KITTI': 'KIT'}[d_], c_, m_))
     plt.close('all')
     return dict(BQ=BQ, BP=BP, TB=TB, bsq_macros=exb, bsq_dis=dis, R=R, P=P, S=S, PT=PT, rho=rho, nums={**nums, **ex}, ci=ci, B=B, cmp=cmp, rt_worst=rt_w, speed=sp)
 
@@ -169,57 +172,103 @@ def bsq_assets(P, S, ct, path='paper/table_bsq.tex'):
             rows.append(dict(seq=seq, codec=c, dataset=dd.dataset.iloc[0],
                              bsq_psnr=0.0 if c == 'x264' else bsq.bsq_rate(A.kbps_total.values, A.psnr_y.values, dd.kbps_total.values, dd.psnr_y.values)))
     BP = pd.DataFrame(rows)
+    # PSNR-based BSQ-rate restricted to the PSNR interval in which the anchor's localization error lies between 1.05 and 3
+    rows = []
+    for (seq, sy), _ in P[P.codec != 'raw'].groupby(['seq', 'system']):
+        Al = P[(P.seq == seq) & (P.system == sy) & (P.codec == 'x264')]
+        e = E[(E.seq == seq) & (E.codec == 'x264')].sort_values('kbps_total'); lr = np.log10(e.kbps_total.values); ps = e.psnr_y.values
+        r3 = analysis.rate_at_tolerance(Al.kbps.values, Al.rel_eff.values, 3.0); r105 = analysis.rate_at_tolerance(Al.kbps.values, Al.rel_eff.values, 1.05)
+        iv = None
+        if np.isfinite(r3):
+            lo = ps.min() if r3 <= e.kbps_total.min() else np.interp(np.log10(r3), lr, ps)
+            hi = ps.max() if not np.isfinite(r105) else np.interp(np.log10(r105), lr, ps)
+            if hi - lo >= 0.5: iv = (lo, hi)
+        d = E[E.seq == seq]; A = d[d.codec == 'x264']
+        for c, dd in d.groupby('codec'):
+            v = 0.0 if c == 'x264' else (np.nan if iv is None else bsq.bsq_rate(A.kbps_total.values, A.psnr_y.values, dd.kbps_total.values, dd.psnr_y.values, lo=iv[0], hi=iv[1]))
+            rows.append(dict(seq=seq, system=sy, codec=c, dataset=dd.dataset.iloc[0], bsq_psnr_m=v,
+                             psnr_lo=iv[0] if iv else np.nan, psnr_hi=iv[1] if iv else np.nan))
+    BM = pd.DataFrame(rows)
     T = {}
     for (sy, ds, c), g in BQ.groupby(['system', 'dataset', 'codec']): T[(sy, ds, c)] = _agg_col(g.bsq_loc)
     for (ds, c), g in BP.groupby(['dataset', 'codec']): T[('psnr', ds, c)] = _agg_col(g.bsq_psnr)
+    for (sy, ds, c), g in BM.groupby(['system', 'dataset', 'codec']): T[('psnrm_' + sy, ds, c)] = _agg_col(g.bsq_psnr_m)
     def fmt(key, c):
-        if c == 'x264': return '0'
         if key not in T: return 'n.d.'
         m, k, n = T[key]
         if not np.isfinite(m): return r'n/a\,\textsuperscript{%d/%d}' % (k, n)
         return _sg(m) + ('' if k == n else r'\,\textsuperscript{%d/%d}' % (k, n))
-    cols = [('TUM VI', ['psnr', 'orbslam3', 'basalt', 'dpvo']), ('EuRoC', ['psnr', 'orbslam3', 'basalt']), ('KITTI', ['psnr', 'orbslam3', 'basalt'])]
-    hdr = {'psnr': 'PSNR', 'orbslam3': 'ORB', 'basalt': 'Bas.', 'dpvo': 'DPVO'}
-    nc = sum(len(x[1]) for x in cols)
-    L = [r'\begin{table}[t]',
-         r'\caption{BSQ-rate~\cite{zvezdakova2020bsq} relative to x264 (\%): average bitrate difference at equal quality, with linear interpolation of the rate as a function of quality, removal of points that break monotonicity, and integration over the overlap of the quality ranges. PSNR: quality is the luma PSNR of the decoded images (image fidelity). ORB, Bas., DPVO: quality is the relative ATE of ORB-SLAM3, Basalt and DPVO, integrated over relative errors 1.05--3 as for $\mathrm{BD\text{-}rate}_{\mathrm{loc}}$. Median over sequences; $k/n$ and n/a as in Table~\ref{tab:bd}; n.d.: not evaluated.}',
-         r'\label{tab:bsq}', r'\centering\footnotesize\setlength{\tabcolsep}{2.5pt}', r'\resizebox{\columnwidth}{!}{%',
+    sysd = {'TUM VI': ['orbslam3', 'basalt', 'dpvo'], 'EuRoC': ['orbslam3', 'basalt'], 'KITTI': ['orbslam3', 'basalt']}
+    short = {'orbslam3': 'ORB-SLAM3', 'basalt': 'Basalt', 'dpvo': 'DPVO'}
+    groups = []
+    for ds in ['TUM VI', 'EuRoC', 'KITTI']:
+        groups.append((ds, [('psnr', 'PSNR, full')] + [x for sy in sysd[ds] for x in (('psnrm_' + sy, 'PSNR$^*$'), (sy, 'loc.'))]))
+    nc = sum(len(g[1]) for g in groups)
+    L = [r'\begin{table*}[t]',
+         r"""\caption{BSQ-rate~\cite{zvezdakova2020bsq,zvezdakova2020bsqrus} relative to x264, reported as $(S_{\mathrm{test}}/S_{\mathrm{x264}}-1)\times100$ (\%): average bitrate difference at equal quality, with linear interpolation of the rate as a function of quality, removal of points that do not strictly improve quality, and integration over the overlap of the quality ranges. ``PSNR, full'': quality is the luma PSNR, integrated over the whole overlap of the two PSNR ranges (the overlap differs between configurations). ``PSNR$^*$'': the same, restricted for each sequence to the PSNR interval in which the localization error of x264 for the given estimator lies between 1.05 and 3 times the reference. ``loc.'': quality is the relative ATE of the estimator, integrated over relative errors 1.05--3 as for $\mathrm{BD\text{-}rate}_{\mathrm{loc}}$. Median over sequences; $k/n$ and n/a as in Table~\ref{tab:bd}.}""",
+         r'\label{tab:bsq}', r'\centering\footnotesize\setlength{\tabcolsep}{2.6pt}', r'\resizebox{\textwidth}{!}{%',
          r'\begin{tabular}{@{}l' + 'r' * nc + '@{}}', r'\toprule',
-         ' & ' + ' & '.join(r'\multicolumn{%d}{c}{%s}' % (len(s), d.replace('TUM VI', 'TUM~VI')) for d, s in cols) + r' \\']
+         ' & ' + ' & '.join(r'\multicolumn{%d}{c}{%s}' % (len(cs), ds.replace('TUM VI', 'TUM~VI')) for ds, cs in groups) + r' \\']
     i = 2; cm = ''
-    for d, s in cols: cm += r'\cmidrule(lr){%d-%d}' % (i, i + len(s) - 1); i += len(s)
-    L += [cm, 'Configuration & ' + ' & '.join(hdr[x] for _, s in cols for x in s) + r' \\', r'\midrule']
+    for ds, cs in groups: cm += r'\cmidrule(lr){%d-%d}' % (i, i + len(cs) - 1); i += len(cs)
+    L.append(cm)
+    # second header row: estimator names over PSNR*/loc pairs
+    h2 = []
+    for ds, cs in groups:
+        h2.append('')
+        for sy in sysd[ds]: h2.append(r'\multicolumn{2}{c}{%s}' % short[sy])
+    L.append(' & ' + ' & '.join(h2) + r' \\')
+    L.append('Configuration & ' + ' & '.join(lab for _, cs in groups for _, lab in cs) + r' \\'); L.append(r'\midrule')
     for c in [c for c in mr.ORDER if c not in ('raw', 'x264')]:
-        cells = [mr.LAB[c]]
-        for d, s in cols:
-            for x in s: cells.append(fmt((x, d, c) if x == 'psnr' else (x, d, c), c))
-        L.append(' & '.join(cells) + r' \\')
-    L += [r'\bottomrule', r'\end{tabular}}', r'\end{table}']
+        L.append(' & '.join([mr.LAB[c]] + [fmt((key, ds, c), c) for ds, cs in groups for key, _ in cs]) + r' \\')
+    L += [r'\bottomrule', r'\end{tabular}}', r'\end{table*}']
     open(path, 'w').write('\n'.join(L) + '\n')
     from scipy.stats import spearmanr
     M = S.merge(BQ, on=['seq', 'system', 'codec', 'dataset']); M = M[(M.codec != 'x264') & M.bd_vs_x264.notna() & M.bsq_loc.notna()]
+    dis_seq = M[np.sign(M.bd_vs_x264) != np.sign(M.bsq_loc)]
+    mx = dis_seq[['bd_vs_x264', 'bsq_loc']].abs().max(axis=1)
     ex = {'BSQBDRho': f"{spearmanr(M.bd_vs_x264, M.bsq_loc).statistic:.2f}", 'BSQBDN': str(len(M)),
-          'BSQBDSign': str(int((np.sign(M.bd_vs_x264) != np.sign(M.bsq_loc)).sum())),
+          'BSQBDSign': str(len(dis_seq)), 'BSQBDSignTen': str(int((mx >= 10).sum())), 'BSQBDSignTwenty': str(int((mx >= 20).sum())),
+          'BSQBDSignMHtwo': str(int((dis_seq.seq == 'MH_02_easy').sum())),
           'BSQBDAbsDiff': f"{(M.bsq_loc - M.bd_vs_x264).abs().median():.0f}"}
     med = lambda key: T.get(key, (np.nan,))[0]
+    # medians over sequences: sign agreement between Table 5 (loc) and Table 3 (BD-rate_loc)
+    agree = tot = 0
+    for (sy, ds, c), (m, k, n) in T.items():
+        if sy.startswith('psnr') or c == 'x264' or not np.isfinite(m): continue
+        b_ = agg_bd(cell(S, sy, ds, c))[0]
+        if np.isfinite(b_) and max(abs(b_), abs(m)) > 2: tot += 1; agree += int(np.sign(b_) == np.sign(m))
+    ex['BSQMedAgree'] = str(agree); ex['BSQMedTot'] = str(tot)
     mjp = [med(('psnr', d, 'mjpeg')) for d in ['TUM VI', 'EuRoC', 'KITTI']]
+    mjm = [med(('psnrm_' + s, d, 'mjpeg')) for s in ['orbslam3', 'basalt', 'dpvo'] for d in ['TUM VI', 'EuRoC', 'KITTI']]; mjm = [v for v in mjm if np.isfinite(v)]
     mjl = [med((s, d, 'mjpeg')) for s in ['orbslam3', 'basalt'] for d in ['TUM VI', 'EuRoC', 'KITTI']]; mjl = [v for v in mjl if np.isfinite(v)]
-    ex.update(BSQMJPSNRMin=f'{min(mjp):.0f}', BSQMJPSNRMax=f'{max(mjp):.0f}', BSQMJLocMin=f'{min(mjl):.0f}', BSQMJLocMax=f'{max(mjl):.0f}')
-    # combinations where the PSNR-based and the localization-based medians disagree in sign
+    ex.update(BSQMJPSNRMin=f'{min(mjp):.0f}', BSQMJPSNRMax=f'{max(mjp):.0f}', BSQMJMatchMin=f'{min(mjm):.0f}', BSQMJMatchMax=f'{max(mjm):.0f}',
+              BSQMJLocMin=f'{min(mjl):.0f}', BSQMJLocMax=f'{max(mjl):.0f}')
+    # MJPEG PSNR overlap with x264 (median over sequences of the overlap bounds)
+    ov = []
+    for ds in ['TUM VI', 'EuRoC', 'KITTI']:
+        lo_, hi_ = [], []
+        for seq, d in E[E.dataset == ds].groupby('seq'):
+            a_ = d[d.codec == 'x264'].psnr_y; m_ = d[d.codec == 'mjpeg'].psnr_y
+            lo_.append(max(a_.min(), m_.min())); hi_.append(min(a_.max(), m_.max()))
+        ex['MJOverlap' + {'TUM VI': 'TUM', 'EuRoC': 'EUR', 'KITTI': 'KIT'}[ds]] = f'{np.median(lo_):.0f}--{np.median(hi_):.0f}'
+    # opposite signs between matched PSNR-based and localization-based medians, both at least 5 pp in magnitude
     dis = []
+    ntot = 0
     for (sy, ds, c), (m, k, n) in T.items():
-        if sy == 'psnr' or c in ('x264', 'mjpeg') or not np.isfinite(m): continue
-        mp = med(('psnr', ds, c))
-        if np.isfinite(mp) and np.sign(mp) != np.sign(m) and abs(m) >= 5: dis.append((sy, ds, c))
-    ex['BSQSignDis'] = str(len(dis)); ex['BSQSignDisKIT'] = str(sum(1 for x in dis if x[1] == 'KITTI'))
-    ntot = sum(1 for (sy, ds, c), v in T.items() if sy != 'psnr' and c not in ('x264', 'mjpeg') and np.isfinite(v[0]))
-    ex['BSQSignTot'] = str(ntot)
-    gap = [abs(med((s, d, c)) - med(('psnr', d, c))) for s in ['orbslam3', 'basalt', 'dpvo'] for d in ['TUM VI', 'EuRoC', 'KITTI'] for c in INTER
-           if np.isfinite(med((s, d, c))) and np.isfinite(med(('psnr', d, c)))]
+        if sy.startswith('psnr') or c in ('x264', 'mjpeg') or not np.isfinite(m): continue
+        mp = med(('psnrm_' + sy, ds, c))
+        if not np.isfinite(mp): continue
+        ntot += 1
+        if np.sign(mp) != np.sign(m) and abs(m) >= 5 and abs(mp) >= 5: dis.append((sy, ds, c))
+    ex['BSQSignDis'] = str(len(dis)); ex['BSQSignDisKIT'] = str(sum(1 for x in dis if x[1] == 'KITTI')); ex['BSQSignTot'] = str(ntot)
+    gap = [abs(med((s, d, c)) - med(('psnrm_' + s, d, c))) for s in ['orbslam3', 'basalt', 'dpvo'] for d in ['TUM VI', 'EuRoC', 'KITTI'] for c in INTER
+           if np.isfinite(med((s, d, c))) and np.isfinite(med(('psnrm_' + s, d, c)))]
     ex['BSQGapMed'] = f'{np.median(gap):.0f}'; ex['BSQGapMax'] = f'{max(gap):.0f}'
+    DSK = {'TUM VI': 'TUM', 'EuRoC': 'EUR', 'KITTI': 'KIT'}
     for (sy, ds, c), (m, k, n) in T.items():
-        if np.isfinite(m): ex_key = 'bsq@%s@%s@%s' % (sy, {'TUM VI': 'TUM', 'EuRoC': 'EUR', 'KITTI': 'KIT'}[ds], c); ex[ex_key] = _sg(m)
-    return BQ, BP, T, ex, dis
+        if np.isfinite(m): ex['bsq@%s@%s@%s' % (sy.replace('_', ''), DSK[ds], c)] = _sg(m)
+    return BQ.merge(BP, on=['seq', 'codec', 'dataset'], how='left').merge(BM[['seq', 'system', 'codec', 'bsq_psnr_m', 'psnr_lo', 'psnr_hi']], on=['seq', 'system', 'codec'], how='left'), BP, T, ex, dis
 
 def write_bsq_macros(ex, path='paper/generated_numbers.tex'):
     with open(path, 'a') as f:

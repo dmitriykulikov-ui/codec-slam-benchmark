@@ -63,7 +63,7 @@ This regenerates `paper/generated_numbers.tex`, all `paper/table_*.tex`, `paper/
 
 ### Encoding and estimator runs
 
-1. Build the images, e.g. `docker build -t codecslam/orbslam3 -f docker/Dockerfile.orbslam3 docker` (similarly `orbslam3k`, `basalt`, `dpvo`, `dpvo2`, `vvenc`). ORB-SLAM3 (`4452a3c`), DPVO (`0ac95b6`) and VVenC (`de2443e`) are pinned by commit. Basalt is installed from its prebuilt release by the official install script, which cannot be pinned; the image used in the paper was built on 2026-10-07. For DPVO pass `--build-arg TORCH_CUDA_ARCH_LIST=<your GPU arch>` (the paper used 12.0). The Dockerfiles use a Yandex Ubuntu mirror; replace it with your local mirror if needed.
+1. Build the images, e.g. `docker build -t codecslam/orbslam3 -f docker/Dockerfile.orbslam3 docker` (similarly `orbslam3k`, `basalt`, `dpvo`, `dpvo2`, `vvenc`). ORB-SLAM3 (`4452a3c`), DPVO (`0ac95b6`) and VVenC (`de2443e`) are pinned by commit. Basalt is pinned to prebuilt release 0.1.7 via the official install script (the latest release when the paper image was built on 2026-10-07). For DPVO pass `--build-arg TORCH_CUDA_ARCH_LIST=<your GPU arch>` (the paper used 12.0). The Dockerfiles use a Yandex Ubuntu mirror; replace it with your local mirror if needed.
 2. Obtain the datasets from their authors (TUM VI `dataset-room*_512_16`, EuRoC `machine_hall.zip`, KITTI odometry gray images and poses; KITTI is licensed CC BY-NC-SA 3.0, register at the KITTI website before downloading).
 3. Set `CODECSLAM_ROOT` (working directory with `data/`, `tools/`, results), `CODECSLAM_FFMPEG` (FFmpeg with libx264, libx265, libsvtav1, libvvenc; the paper used the BtbN static build `N-127233-g452820cba6-20261007`) and `CODECSLAM_FFMPEG_NVENC` (FFmpeg 8.1 with NVENC).
 4. Run the grid, e.g. `RESDIR=results_main python bench/run_bench.py --seqs room1,room2 --systems orbslam3,basalt --workers 6`; `scripts/` contains the scripts used for each phase.
@@ -73,7 +73,7 @@ This regenerates `paper/generated_numbers.tex`, all `paper/table_*.tex`, `paper/
 * ORB-SLAM3: C++14 instead of C++11, OpenCV 4.2 accepted instead of 4.4 (Ubuntu 20.04), viewer disabled in all examples; the KITTI stereo example saves the timestamped trajectory of the largest map (`Dockerfile.orbslam3k`).
 * DPVO: `.type()` replaced by `.scalar_type()` for current PyTorch; Eigen 3.4.0 added; a runner `docker/dpvo_run.py` for EuRoC/TUM-style image folders.
 
-Software versions: ORB-SLAM3 commit 4452a3c, Basalt prebuilt release (2026-10-07), DPVO commit 0ac95b6, VVenC commit de2443e (1.15.0-dev), FFmpeg BtbN master N-127233 (software encoders) and FFmpeg 8.1 (NVENC), evo for trajectory evaluation.
+Software versions: ORB-SLAM3 commit 4452a3c, Basalt prebuilt release 0.1.7, DPVO commit 0ac95b6, VVenC commit de2443e (1.15.0-dev), FFmpeg BtbN master N-127233 (software encoders) and FFmpeg 8.1 (NVENC), evo for trajectory evaluation.
 
 ## License
 

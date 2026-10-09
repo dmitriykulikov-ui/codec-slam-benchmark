@@ -100,16 +100,18 @@ def fig_curves(P, ds, systems, path):
         for c in mr.ORDER:
             dd = ds_[ds_.codec == c]
             if dd.empty: continue
-            agg = dd.groupby('q').agg(kbps=('kbps', 'median'), rel=('rel_eff', 'median')).sort_values('kbps')
-            ok = agg[agg.rel < analysis.R_FAIL]; bad = agg[agg.rel >= analysis.R_FAIL]
+            agg = dd.assign(f=dd.fail >= 0.5).groupby('q').agg(kbps=('kbps', 'median'), rel=('rel_eff', 'median'), ff=('f', 'mean')).sort_values('kbps')
+            ok = agg[agg.rel < analysis.R_FAIL]; top = agg[agg.rel >= analysis.R_FAIL]
+            bad = top[top.ff >= 0.5]; div = top[top.ff < 0.5]     # failed by coverage vs. diverged with complete trajectories
             ax.plot(ok.kbps / 1000, ok.rel, mr.LS.get(c, '-'), marker='o', ms=2.6, lw=1.05, color=mr.COL[c], label=mr.LAB[c], zorder=3)
             if len(bad): ax.scatter(bad.kbps / 1000, np.full(len(bad), 20.0), marker='x', s=16, lw=0.9, color=mr.COL[c], zorder=4)
+            if len(div): ax.scatter(div.kbps / 1000, np.full(len(div), 20.0), marker='^', s=14, lw=0.8, facecolor='none', edgecolor=mr.COL[c], zorder=4)
         ax.axhline(1, color='0.45', lw=0.7, ls=':'); ax.axhspan(1, 1.25, color='0.92', zorder=0, lw=0)
         ax.set_xscale('log'); ax.set_yscale('log'); ax.set_title({'orbslam3': 'ORB-SLAM3 (stereo)', 'basalt': 'Basalt (stereo VO)'}.get(s, TITLE[s]) if ds == 'KITTI' else TITLE[s], loc='left')
         ax.set_xlabel('Stereo bitrate (Mbit/s)'); ax.xaxis.set_major_formatter(mpl.ticker.FuncFormatter(mr.mbps_fmt))
         ax.set_xlim(0.018, 30)
     a0 = axes[0]; a0.set_ylabel('Relative ATE (median over sequences)'); a0.set_ylim(0.7, 26)
-    a0.set_yticks([1, 1.25, 2, 5, 10, 20]); a0.set_yticklabels(['1', '1.25', '2', '5', '10', 'failed'])
+    a0.set_yticks([1, 1.25, 2, 5, 10, 20]); a0.set_yticklabels(['1', '1.25', '2', '5', '10', r'$>$30'])
     a0.yaxis.set_minor_formatter(mpl.ticker.NullFormatter())
     a0.text(0.03, 0.04, 'lower is better', transform=a0.transAxes, fontsize=6, color='0.35')
     h, l = [], []
@@ -135,13 +137,13 @@ def fig_rtau(S, path):
                 v = dd['R@1.25'].dropna() / 1000
                 ax.scatter(v, np.full(len(v), i) + off, s=9, marker=MK[dsn], facecolor=mr.COL[c], edgecolor='none', alpha=0.8, zorder=3)
                 nr = int(dd['R@1.25'].isna().sum())
-                if nr:   # right-censored: tolerance not reached in the tested range -> open marker at the right edge
-                    ax.scatter(np.full(nr, 12.5) * (1 + 0.06 * np.arange(nr)), np.full(nr, i) + off, s=11, marker=MK[dsn],
-                               facecolor='none', edgecolor=mr.COL[c], lw=0.7, zorder=3, clip_on=False)
+                if nr:   # right-censored: tolerance not reached in the tested range -> one open marker at the right edge, annotated with the count
+                    ax.scatter([12.5], [i + off], s=11, marker=MK[dsn], facecolor='none', edgecolor=mr.COL[c], lw=0.7, zorder=3, clip_on=False)
+                    if nr > 1: ax.text(15.5, i + off, str(nr), va='center', ha='left', fontsize=4.5, color=mr.COL[c], clip_on=False)
             vals = sub['R@1.25'].values.astype(float)
             med = float(np.median(np.where(np.isfinite(vals), vals, np.inf))) / 1000
             if np.isfinite(med): ax.plot([med] * 2, [i - 0.32, i + 0.32], color=mr.COL[c], lw=1.8, zorder=4)
-            else: ax.text(0.03, i, 'median not reached', va='center', fontsize=5.5, color='0.45', transform=ax.get_yaxis_transform())
+            else: ax.text(0.53, i - 0.33, 'median not reached', va='center', ha='left', fontsize=4.8, color='0.45', transform=ax.get_yaxis_transform())
         ax.set_xscale('log'); ax.set_title(mr.SYSSHORT[s], loc='left'); ax.set_xlabel(r'$R_{1.25}$, stereo (Mbit/s)')
         ax.xaxis.set_major_formatter(mpl.ticker.FuncFormatter(mr.mbps_fmt)); ax.xaxis.set_minor_formatter(mpl.ticker.NullFormatter()); ax.set_xlim(0.03, 18); ax.margins(y=0.05)
     a0 = np.atleast_1d(axes)[0]
@@ -150,7 +152,7 @@ def fig_rtau(S, path):
     hl = [Line2D([], [], ls='', marker='o', color='0.4', ms=3.5, label='TUM VI sequence'),
           Line2D([], [], ls='', marker='^', color='0.4', ms=3.5, label='EuRoC sequence'),
           Line2D([], [], ls='', marker='s', color='0.4', ms=3.2, label='KITTI sequence'),
-          Line2D([], [], ls='', marker='o', markerfacecolor='none', markeredgecolor='0.4', ms=3.5, label='not reached (right edge)'),
+          Line2D([], [], ls='', marker='o', markerfacecolor='none', markeredgecolor='0.4', ms=3.5, label='not reached (right edge; count)'),
           Line2D([], [], color='0.4', lw=1.8, label='median')]
     np.atleast_1d(axes)[-1].legend(handles=hl, loc='lower right', frameon=False, fontsize=5.5)
     a0.text(0.97, 0.98, 'left = fewer bits', transform=a0.transAxes, ha='right', va='top', fontsize=5.5, color='0.35')
@@ -199,25 +201,35 @@ def gen_numbers(R, P, S, PT, rho, codec_tables, path, finding):
     open(path, 'w').write('\n'.join(L) + '\n')
     return nums
 
-def table_psnr(PT, path):
+def table_psnr(PT, path, S=None):
     cols = [('orbslam3', 'TUM VI'), ('orbslam3', 'EuRoC'), ('orbslam3', 'KITTI'), ('basalt', 'TUM VI'), ('basalt', 'EuRoC'), ('basalt', 'KITTI'), ('dpvo', 'TUM VI')]
     cols = [c for c in cols if ((PT.system == c[0]) & (PT.dataset == c[1])).any()]
-    L = [r'\begin{table}[t]', r'\caption{Luma PSNR (dB) at which the relative ATE reaches 1.25, interpolated on the rate--PSNR curve at $R_{1.25}$; median over sequences. If PSNR were a sufficient proxy for localization quality, each column would be nearly constant.}',
+    L = [r'\begin{table}[t]', r'\caption{Luma PSNR (dB) at which the relative ATE reaches 1.25, interpolated on the rate--PSNR curve at $R_{1.25}$; median over the sequences on which $R_{1.25}$ is reached (superscript $k/n$ if fewer than all; --: reached on fewer than three or fewer than half of the sequences). $^\dagger$: $R_{1.25}$ left-censored on at least one sequence, so the value is an upper bound. If PSNR were a sufficient proxy for localization quality, each column would be nearly constant.}',
          r'\label{tab:psnr}', r'\centering\footnotesize\setlength{\tabcolsep}{3pt}', r'\resizebox{\columnwidth}{!}{%',
          r'\begin{tabular}{@{}l' + 'c' * len(cols) + '@{}}', r'\toprule',
          ' & ' + ' & '.join(r'\shortstack{%s\\%s}' % (mr.SYSSHORT[s], d.replace('TUM VI', 'TUM~VI')) for s, d in cols) + r' \\', r'\midrule']
+    med = {}
     for c in [c for c in mr.ORDER if c in PT.codec.unique()]:
         cells = [mr.LAB[c]]
         for s, d in cols:
-            v = PT[(PT.system == s) & (PT.dataset == d) & (PT.codec == c)].psnr125.dropna()
-            cells.append('n.d.' if not ((PT.system == s) & (PT.dataset == d) & (PT.codec == c)).any() else ('--' if v.empty else f'{v.median():.1f}'))
+            sub = PT[(PT.system == s) & (PT.dataset == d) & (PT.codec == c)]
+            if sub.empty: cells.append('n.d.'); continue
+            v = sub.psnr125.dropna(); n = len(sub); k = len(v)
+            cens = False
+            if S is not None:
+                ss = S[(S.system == s) & (S.dataset == d) & (S.codec == c)]
+                cens = bool(ss.get('cens_R@1.25', pd.Series(dtype=bool)).fillna(False).astype(bool).any())
+            if k < 3 or k < n / 2: cells.append('--' + ('' if k == n else r'\,\textsuperscript{%d/%d}' % (k, n))); continue
+            m = v.median(); med[(s, d, c)] = m
+            cells.append(f'{m:.1f}' + (r'$^\dagger$' if cens else '') + ('' if k == n else r'\,\textsuperscript{%d/%d}' % (k, n)))
         L.append(' & '.join(cells) + r' \\')
     spread = []
     for s, d in cols:
-        v = PT[(PT.system == s) & (PT.dataset == d)].groupby('codec').psnr125.median().dropna()
-        spread.append(f'{v.max() - v.min():.1f}' if len(v) > 1 else '--')
-    L += [r'\midrule', 'Spread (max$-$min) & ' + ' & '.join(spread) + r' \\', r'\bottomrule', r'\end{tabular}}', r'\end{table}']
+        v = [m for (s2, d2, c), m in med.items() if s2 == s and d2 == d and c != 'mjpeg']
+        spread.append(f'{max(v) - min(v):.1f}' if len(v) > 1 else '--')
+    L += [r'\midrule', 'Spread, inter codecs & ' + ' & '.join(spread) + r' \\', r'\bottomrule', r'\end{tabular}}', r'\end{table}']
     open(path, 'w').write('\n'.join(L) + '\n')
+    return med
 
 def fig_psnr(P, path):
     systems = [s for s in mr.SYS if s in P.system.unique()]

@@ -7,6 +7,7 @@ import numpy as np, pandas as pd
 HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 import matplotlib; matplotlib.use('Agg')
+from figure_style import apply_figure_style
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--n-boot', type=int, default=1000); ap.add_argument('--seed', type=int, default=1)
@@ -15,11 +16,12 @@ def main():
     runs_dpvo = pd.read_csv(os.path.join(ROOT, 'results/runs_dpvo.csv'))
     enc = pd.read_csv(os.path.join(ROOT, 'results/encodings.csv'))
     os.makedirs(os.path.join(a.out, 'figures'), exist_ok=True)
-    g = {'__name__': 'codecslam_reproduce'}
-    for f in ('build_assets.py', 'final_pipeline.py'):
+    apply_figure_style()
+    g = {'__name__': 'codecslam_reproduce', 'apply_figure_style': apply_figure_style}
+    for f in ('build_assets.py', 'diagnostics.py', 'final_pipeline.py'):
         src = open(os.path.join(HERE, f)).read().replace("'paper/", "'" + a.out.rstrip('/') + "/")
         exec(compile(src, f, 'exec'), g)
-    out = g['build_all'](runs, runs_dpvo, enc, n_boot=a.n_boot, seed=a.seed)
+    out = g['build_all'](runs, runs_dpvo, enc, n_boot=a.n_boot, seed=a.seed, results_dir=os.path.join(ROOT, 'results'))
     ref = pd.read_csv(os.path.join(ROOT, 'results/summary_per_sequence.csv'))
     S = out['S']; key = ['seq', 'system', 'codec']
     m = ref.merge(S, on=key, suffixes=('_ref', ''))
