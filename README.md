@@ -1,5 +1,7 @@
 # codec-slam-benchmark
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23278262.svg)](https://doi.org/10.5281/zenodo.23278262)
+
 Rate–accuracy benchmark of video codecs for visual and visual–inertial localization (VO/VIO/SLAM).
 
 This repository contains the code and the per-run results behind the paper
@@ -74,6 +76,10 @@ This regenerates `paper/generated_numbers.tex`, all `paper/table_*.tex`, `paper/
 * DPVO: `.type()` replaced by `.scalar_type()` for current PyTorch; Eigen 3.4.0 added; a runner `docker/dpvo_run.py` for EuRoC/TUM-style image folders.
 
 Software versions: ORB-SLAM3 commit 4452a3c, Basalt prebuilt release 0.1.7, DPVO commit 0ac95b6, VVenC commit de2443e (1.15.0-dev), FFmpeg BtbN master N-127233 (software encoders) and FFmpeg 8.1 (NVENC), evo for trajectory evaluation.
+
+## Citation
+
+Code and data: D. Kulikov and A. Bigler, *codec-slam-benchmark*, Zenodo, 2026, doi:10.5281/zenodo.23278262 (all versions; v1.1.1: doi:10.5281/zenodo.23278263).
 
 ## License
 
